@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Multiplication Process Diagnostic</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; display: flex; flex-direction: column; align-items: center; padding: 20px; margin: 0;}
+        .container { background: white; padding: 30px; border: 3px solid #333; border-radius: 12px; width: 100%; max-width: 640px; box-shadow: 10px 10px 0px #ccc; text-align: center; position: relative; }
+        .hidden { display: none; }
+        
+        table.math-layout-table { border-collapse: collapse; margin: 15px auto; table-layout: fixed; }
+        table.math-layout-table td { width: 60px; height: 60px; text-align: center; vertical-align: middle; font-size: 2.3rem; font-weight: bold; padding: 0; position: relative; border: 1px dashed #ddd; }
+        
+        .regroup-row td { font-size: 1.5rem; color: #e67e22; height: 40px; border: none !important; vertical-align: bottom; }
+        .op-cell { border-bottom: 5px solid black !important; }
+        
+        /* Highlighting target workspace cells instead of the factors */
+        .highlight-target { background-color: #fff9c4 !important; border: 4px solid #f1c40f !important; border-radius: 6px; }
+        
+        .progress-banner { font-size: 1.1rem; font-weight: bold; color: #7f8c8d; background: #eee; padding: 6px 12px; border-radius: 20px; display: inline-block; margin-bottom: 15px; }
+        .controls { text-align: center; margin-top: 15px; padding: 20px; background: #f9f9f9; border-radius: 10px; border: 2px solid #2c3e50; }
+        
+        input[type="number"] { font-size: 1.8rem; padding: 8px; width: 140px; text-align: center; border: 3px solid #333; border-radius: 8px; outline: none; margin-bottom: 10px; }
+        #student-name { width: 80%; font-size: 1.3rem; padding: 10px; margin: 15px auto; display: block; }
+        
+        .btn-group { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 10px; }
+        .row-buttons { display: flex; gap: 10px; width: 100%; justify-content: center; }
+        button.action { font-size: 1.2rem; padding: 10px 25px; background: #2c3e50; color: white; border: none; cursor: pointer; border-radius: 8px; font-weight: bold; }
+        button.skip-btn { font-size: 1.1rem; padding: 10px 20px; background: #e67e22; color: white; border: none; cursor: pointer; border-radius: 8px; font-weight: bold; }
+        button.exit-btn { font-size: 1rem; padding: 8px 18px; background: #c0392b; color: white; border: none; cursor: pointer; border-radius: 8px; font-weight: bold; width: 85%; margin-top: 5px; }
+        
+        #feedback { margin-top: 12px; min-height: 25px; font-weight: bold; color: #e67e22; font-size: 1.1rem; }
+        .reset-btn { background: #95a5a6; padding: 5px 10px; font-size: 0.8rem; position: absolute; top: 10px; right: 10px; color: white; border-radius: 4px; border: none; cursor: pointer; }
+        .recovery-alert { background-color: #fff2f2 !important; border-color: #e74c3c !important; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <button id="mini-reset" class="reset-btn hidden" onclick="location.reload()">Reset Test</button>
+
+    <div id="setup">
+        <h2>📊 Multiplication Process Diagnostic</h2>
+        <p>Fill out the calculation blocks step-by-step by watching the highlighted grid boxes.</p>
+        <br>
+        <label><strong>Student Name:</strong></label>
+        <input type="text" id="student-name" placeholder="First and Last Name" autocomplete="off">
+        <br><br>
+        <button class="action" onclick="startTest()">Begin Challenge ➔</button>
+    </div>
+
+    <div id="math-room" class="hidden">
+        <div id="q-tracker" class="progress-banner">Question 1 of 5</div>
+        <table id="math-table" class="math-layout-table"></table>
+
+        <div class="controls" id="control-panel">
+            <div id="input-container">
+                <input type="number" id="user-ans" autocomplete="off" placeholder="?">
+                <br>
+                <div class="btn-group">
+                    <div class="row-buttons">
+                        <button class="action" id="submit-btn" onclick="handleStepSubmission()">Submit Entry</button>
+                        <button class="skip-btn" id="idk-btn" onclick="handleIDKRequest()">🤷‍♂️ I Don't Know</button>
+                    </div>
+                    <button class="exit-btn" id="early-exit-btn" onclick="finishAssessment()">🛑 Submit Early & Finish Test</button>
+                </div>
+            </div>
+            <div id="feedback"></div>
+        </div>
+    </div>
+
+    <div id="result-screen" class="hidden">
+        <h2>All Done! Great Effort!</h2>
+        <p id="final-stats" style="font-size: 1.6rem; margin: 15px 0; font-weight: bold; color: #27ae60;"></p>
+        <p style="color: #2c3e50; font-weight: bold; margin-bottom: 5px;">Your math journey steps have been summarized.</p>
+        <p style="color: #7f8c8d; font-size: 0.95rem; max-width: 450px; margin: 0 auto 15px auto;">Click below to open your form with your details pre-filled. Just hit Submit on that page to save your score!</p>
+        <br>
+        <button id="submit-form-btn" style="background: #2ecc71; font-size: 1.4rem; padding: 15px 35px; width: 90%; color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer;">👉 Send Summary to Google Form</button>
+    </div>
+</div>
+
+<script>
+    let topNums = [], botNums = [], maxCols = 0, currentCol = 0, activeCarry = 0;
+    let subStepMode = null, pendingVal = 0;
+    let savedAns = {}, multCarries = {};
+    let studentName = "";
+    
+    let activeQuestionNum = 1;
+    const maxQuestions = 5;
+    let problemsServedHistory = [];
+
+    let problemsPerfectOnFirstTry = 0;
+    let errorsOnCurrentProblem = 0;
+    let totalMistakeTally = 0;
+    let comprehensiveMistakeLog = [];
+    let failureOnCurrentStep = false;
+    let expectedTargetValue = null;
+
+    document.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !document.getElementById('math-room').classList.contains('hidden')) {
+            let submitBtn = document.getElementById('submit-btn');
+            if (submitBtn.getAttribute('onclick') === 'handleStepSubmission()') {
+                handleStepSubmission();
+            }
+        }
+    });
+
+    function startTest() {
+        studentName = document.getElementById('student-name').value.trim();
+        if(!studentName) return alert("Please type your name before starting.");
+        document.getElementById('setup').classList.add('hidden');
+        document.getElementById('math-room').classList.remove('hidden');
+        document.getElementById('mini-reset').classList.remove('hidden');
+        generateRandomProblem();
+    }
+
+    function generateRandomProblem() {
+        errorsOnCurrentProblem = 0; 
+        
+        let topVal = Math.floor(Math.random() * 900) + 100; 
+        let botVal = Math.floor(Math.random() * 8) + 2; 
+
+        let s1 = topVal.toString();
+        let s2 = botVal.toString();
+        
+        maxCols = s1.length + 2;
+        topNums = s1.padStart(maxCols, ' ').split('');
+        botNums = s2.padStart(maxCols, ' ').split('');
+        problemsServedHistory.push(`${topVal}×${botVal}`);
+
+        currentCol = maxCols - 1; 
+        activeCarry = 0;
+        subStepMode = null;
+        pendingVal = 0;
+        savedAns = {}; 
+        multCarries = {}; 
+
+        document.getElementById('q-tracker').innerText = `Question ${activeQuestionNum} of ${maxQuestions}`;
+        setupTableMatrix();
+        prepareStepHighlight();
+    }
+
+    function setupTableMatrix() {
+        let table = document.getElementById('math-table');
+        table.style.width = (maxCols * 60) + "px";
+        renderGrid();
+    }
+
+    function renderGrid() {
+        let table = document.getElementById('math-table');
+        let h = `<tr class="regroup-row">`;
+        for(let i=0; i<maxCols; i++) h += `<td id="r${i}">${multCarries[i] || ''}</td>`;
+        h += `</tr><tr><td></td>`;
+        for(let i=1; i<maxCols; i++) h += `<td id="t${i}">${topNums[i]===' '?'':topNums[i]}</td>`;
+        h += `</tr><tr class="op-cell"><td>×</td>`;
+        for(let i=1; i<maxCols; i++) h += `<td id="b${i}">${botNums[i]===' '?'':botNums[i]}</td>`;
+        h += `</tr><tr><td></td>`;
+        for(let i=1; i<maxCols; i++) h += `<td id="ans1-${i}">${savedAns['ans1-'+i]||''}</td>`;
+        h += `</tr>`;
+        table.innerHTML = h;
+    }
+
+    function prepareStepHighlight() {
+        document.getElementById('control-panel').classList.remove('recovery-alert');
+        document.getElementById('feedback').innerText = "";
+        
+        let inp = document.getElementById('user-ans');
+        inp.classList.remove('hidden');
+        document.getElementById('idk-btn').classList.remove('hidden');
+        
+        inp.value = "";
+        inp.focus();
+
+        document.querySelectorAll('td').forEach(td => td.classList.remove('highlight-target'));
+        
+        let bIdx = maxCols - 1;
+        let bDigit = parseInt(botNums[bIdx]) || 0;
+        let tDigit = parseInt(topNums[currentCol]) || 0;
+
+        if (subStepMode === "carry") {
+            // Highlight the exact carry cell in the top row where the carry goes
+            let targetCarryCell = document.getElementById('r' + (currentCol - 1));
+            if(targetCarryCell) targetCarryCell.classList.add('highlight-target');
+            
+            expectedTargetValue = Math.floor(pendingVal / 10);
+        } else {
+            failureOnCurrentStep = false;
+            // Highlight the calculation answer cell where the product row digit lands
+            let targetAnsCell = document.getElementById('ans1-' + currentCol);
+            if(targetAnsCell) targetAnsCell.classList.add('highlight-target');
+            
+            expectedTargetValue = (tDigit * bDigit) + activeCarry;
+        }
+    }
+
+    function addMistakeLogEntry(issueType, currentInputValue) {
+        totalMistakeTally++;
+        errorsOnCurrentProblem++;
+        let sentenceDescription = `Q${activeQuestionNum}: `;
+        let bIdx = maxCols - 1;
+
+        let tDigit = parseInt(topNums[currentCol]) || 0;
+        let bDigit = parseInt(botNums[bIdx]) || 0;
+        let rawProduct = tDigit * bDigit;
+
+        if (subStepMode === "carry") {
+            sentenceDescription += (issueType === 'IDK') ? `Gave up when writing the carry over from calculation (${bDigit}×${tDigit} + ${activeCarry}).` : `Wrong carry value typed after calculation yielded ${pendingVal}.`;
+        }
+        else {
+            if (issueType === 'IDK') {
+                sentenceDescription += `Gave up calculating column step ${bDigit} × ${tDigit}${activeCarry > 0 ? ' + carry ' + activeCarry : ''}.`;
+            } else {
+                if (activeCarry > 0 && currentInputValue === rawProduct) {
+                    sentenceDescription += `Forgot to add the carry value of ${activeCarry} on product ${bDigit}×${tDigit}.`;
+                } else {
+                    sentenceDescription += `Calculation error on column step ${bDigit}×${tDigit}${activeCarry > 0 ? ' + carry ' + activeCarry : ''} (Entered: ${currentInputValue}).`;
+                }
+            }
+        }
+        comprehensiveMistakeLog.push(sentenceDescription);
+    }
+
+    function handleIDKRequest() {
+        let rawVal = parseInt(document.getElementById('user-ans').value);
+        if (!failureOnCurrentStep) {
+            addMistakeLogEntry('IDK', rawVal);
+            failureOnCurrentStep = true;
+        }
+        
+        let fb = document.getElementById('feedback');
+        fb.innerText = `💡 Answer was: ${expectedTargetValue}`;
+        fb.style.color = "#e67e22";
+
+        setTimeout(() => {
+            executeValidStepTransition(expectedTargetValue);
+        }, 1200);
+    }
+
+    function handleStepSubmission() {
+        let val = parseInt(document.getElementById('user-ans').value);
+        let fb = document.getElementById('feedback');
+        
+        if (isNaN(val)) return;
+
+        if (val === expectedTargetValue) {
+            fb.innerText = "Correct!";
+            fb.style.color = "green";
+            executeValidStepTransition(val);
+        } else {
+            if (!failureOnCurrentStep) {
+                addMistakeLogEntry('ERROR', val);
+                failureOnCurrentStep = true;
+            }
+            document.getElementById('control-panel').classList.add('recovery-alert');
+            fb.style.color = "#e74c3c";
+            fb.innerText = `❌ Incorrect. Check calculations and try again!`;
+        }
+    }
+
+    function executeValidStepTransition(resolvedValue) {
+        if (subStepMode === "carry") {
+            multCarries[currentCol-1] = resolvedValue;
+            subStepMode = null;
+            finalize(pendingVal % 10);
+            return;
+        }
+        
+        let isFinalDigit = (topNums.slice(0, currentCol).join('').trim().length === 0);
+
+        if (resolvedValue >= 10 && !isFinalDigit) {
+            pendingVal = resolvedValue;
+            subStepMode = "carry";
+            prepareStepHighlight();
+        } else { 
+            finalize(resolvedValue); 
+        }
+    }
+
+    function finalize(v) {
+        let rowTag = 'ans1-';
+        if(v >= 10){
+            savedAns[rowTag+currentCol] = (v % 10).toString();
+            savedAns[rowTag+(currentCol-1)] = Math.floor(v/10).toString();
+        } else { 
+            savedAns[rowTag+currentCol] = v.toString(); 
+        }
+        
+        renderGrid();
+
+        let more = (topNums.slice(0, currentCol).join('').trim().length > 0);
+
+        if(!more) { 
+            if (errorsOnCurrentProblem === 0) {
+                problemsPerfectOnFirstTry++;
+            }
+            handleEndOfPhase();
+        } else {
+            currentCol--;
+            activeCarry = multCarries[currentCol] || 0;
+            prepareStepHighlight();
+        }
+    }
+
+    function handleEndOfPhase() {
+        document.querySelectorAll('td').forEach(td => td.classList.remove('highlight-target'));
+        
+        document.getElementById('user-ans').classList.add('hidden');
+        document.getElementById('idk-btn').classList.add('hidden');
+        
+        let submitBtn = document.getElementById('submit-btn');
+        submitBtn.innerText = "Next Problem ➔";
+        submitBtn.style.background = "#27ae60";
+        submitBtn.setAttribute('onclick', 'advanceProblemSequence()');
+    }
+
+    function advanceProblemSequence() {
+        let submitBtn = document.getElementById('submit-btn');
+        submitBtn.innerText = "Submit Entry";
+        submitBtn.style.background = "#2c3e50";
+        submitBtn.setAttribute('onclick', 'handleStepSubmission()');
+        
+        if (activeQuestionNum < maxQuestions) {
+            activeQuestionNum++;
+            generateRandomProblem();
+        } else {
+            finishAssessment();
+        }
+    }
+
+    function finishAssessment() {
+        document.getElementById('math-room').classList.add('hidden');
+        document.getElementById('mini-reset').classList.remove('hidden');
+        document.getElementById('result-screen').classList.remove('hidden');
+        
+        const diagnosticScore = `${problemsPerfectOnFirstTry} / ${maxQuestions} (${totalMistakeTally} mistakes total)`;
+        document.getElementById('final-stats').innerText = `Process Accuracy: ${diagnosticScore}`;
+        
+        const cleanProblemsServed = problemsServedHistory.join(', ');
+        let cleanLog = comprehensiveMistakeLog.length > 0 ? comprehensiveMistakeLog.join('\n') : "None! Perfect Component Mastery Across Attempted Steps.";
+        
+        if (activeQuestionNum < maxQuestions) {
+            cleanLog += `\n(Student clicked Early Finish button on Question ${activeQuestionNum})`;
+        }
+
+        const encName = encodeURIComponent(studentName);
+        const encProblems = encodeURIComponent(cleanProblemsServed);
+        const encScore = encodeURIComponent(diagnosticScore);
+        const encLog = encodeURIComponent(cleanLog);
+
+        const finalTargetURL = `https://docs.google.com/forms/d/e/1FAIpQLSc2K8SIqjQTDYRAofLA60QoGop7vKToATJvzV6ruV1z78mvqw/viewform?usp=pp_url&entry.944356322=${encName}&entry.1421363778=${encProblems}&entry.2005197473=${encScore}&entry.860537547=${encLog}`;
+
+        document.getElementById('submit-form-btn').onclick = function() {
+            this.disabled = true;
+            this.innerText = "Opening Secure Form...";
+            window.open(finalTargetURL, '_blank');
+            alert("✅ Data compiled! Your results have opened in a new tab with the answers pre-filled. Please click 'Submit' on that screen to finalize your score dashboard!");
+            location.reload();
+        };
+    }
+</script>
+</body>
+</html>
