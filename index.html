@@ -14,16 +14,23 @@
         .regroup-row td { font-size: 1.5rem; color: #e67e22; height: 40px; border: none !important; vertical-align: bottom; }
         .op-cell { border-bottom: 5px solid black !important; }
         
-        /* Highlighting target workspace cells instead of the factors */
+        /* Grid Input Box Styling */
+        .grid-input { width: 100%; height: 100%; border: none; text-align: center; font-size: 2.3rem; font-weight: bold; font-family: inherit; background: transparent; outline: none; padding: 0; margin: 0; color: #2c3e50; }
+        /* Hide arrows on number inputs */
+        .grid-input::-webkit-outer-spin-button, .grid-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .grid-input[type=number] { -moz-appearance: textfield; }
+
+        .regroup-row .grid-input { font-size: 1.5rem; color: #e67e22; }
+        
+        /* Highlight target workspace cell directly on the grid */
         .highlight-target { background-color: #fff9c4 !important; border: 4px solid #f1c40f !important; border-radius: 6px; }
         
         .progress-banner { font-size: 1.1rem; font-weight: bold; color: #7f8c8d; background: #eee; padding: 6px 12px; border-radius: 20px; display: inline-block; margin-bottom: 15px; }
-        .controls { text-align: center; margin-top: 15px; padding: 20px; background: #f9f9f9; border-radius: 10px; border: 2px solid #2c3e50; }
+        .controls { text-align: center; margin-top: 15px; padding: 15px; background: #f9f9f9; border-radius: 10px; border: 2px solid #2c3e50; }
         
-        input[type="number"] { font-size: 1.8rem; padding: 8px; width: 140px; text-align: center; border: 3px solid #333; border-radius: 8px; outline: none; margin-bottom: 10px; }
-        #student-name { width: 80%; font-size: 1.3rem; padding: 10px; margin: 15px auto; display: block; }
+        #student-name { width: 80%; font-size: 1.3rem; padding: 10px; margin: 15px auto; display: block; border: 3px solid #333; border-radius: 8px; }
         
-        .btn-group { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 10px; }
+        .btn-group { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 5px; }
         .row-buttons { display: flex; gap: 10px; width: 100%; justify-content: center; }
         button.action { font-size: 1.2rem; padding: 10px 25px; background: #2c3e50; color: white; border: none; cursor: pointer; border-radius: 8px; font-weight: bold; }
         button.skip-btn { font-size: 1.1rem; padding: 10px 20px; background: #e67e22; color: white; border: none; cursor: pointer; border-radius: 8px; font-weight: bold; }
@@ -41,7 +48,7 @@
 
     <div id="setup">
         <h2>📊 Multiplication Process Diagnostic</h2>
-        <p>Fill out the calculation blocks step-by-step by watching the highlighted grid boxes.</p>
+        <p>Fill out the calculation blocks step-by-step by entering numbers directly into the highlighted grid boxes.</p>
         <br>
         <label><strong>Student Name:</strong></label>
         <input type="text" id="student-name" placeholder="First and Last Name" autocomplete="off">
@@ -55,8 +62,6 @@
 
         <div class="controls" id="control-panel">
             <div id="input-container">
-                <input type="number" id="user-ans" autocomplete="off" placeholder="?">
-                <br>
                 <div class="btn-group">
                     <div class="row-buttons">
                         <button class="action" id="submit-btn" onclick="handleStepSubmission()">Submit Entry</button>
@@ -95,15 +100,6 @@
     let comprehensiveMistakeLog = [];
     let failureOnCurrentStep = false;
     let expectedTargetValue = null;
-
-    document.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter' && !document.getElementById('math-room').classList.contains('hidden')) {
-            let submitBtn = document.getElementById('submit-btn');
-            if (submitBtn.getAttribute('onclick') === 'handleStepSubmission()') {
-                handleStepSubmission();
-            }
-        }
-    });
 
     function startTest() {
         studentName = document.getElementById('student-name').value.trim();
@@ -149,13 +145,17 @@
     function renderGrid() {
         let table = document.getElementById('math-table');
         let h = `<tr class="regroup-row">`;
-        for(let i=0; i<maxCols; i++) h += `<td id="r${i}">${multCarries[i] || ''}</td>`;
+        for(let i=0; i<maxCols; i++) {
+            h += `<td id="r${i}">${multCarries[i] !== undefined ? multCarries[i] : ''}</td>`;
+        }
         h += `</tr><tr><td></td>`;
         for(let i=1; i<maxCols; i++) h += `<td id="t${i}">${topNums[i]===' '?'':topNums[i]}</td>`;
         h += `</tr><tr class="op-cell"><td>×</td>`;
         for(let i=1; i<maxCols; i++) h += `<td id="b${i}">${botNums[i]===' '?'':botNums[i]}</td>`;
         h += `</tr><tr><td></td>`;
-        for(let i=1; i<maxCols; i++) h += `<td id="ans1-${i}">${savedAns['ans1-'+i]||''}</td>`;
+        for(let i=1; i<maxCols; i++) {
+            h += `<td id="ans1-${i}">${savedAns['ans1-'+i] !== undefined ? savedAns['ans1-'+i] : ''}</td>`;
+        }
         h += `</tr>`;
         table.innerHTML = h;
     }
@@ -164,80 +164,54 @@
         document.getElementById('control-panel').classList.remove('recovery-alert');
         document.getElementById('feedback').innerText = "";
         
-        let inp = document.getElementById('user-ans');
-        inp.classList.remove('hidden');
+        renderGrid();
         document.getElementById('idk-btn').classList.remove('hidden');
-        
-        inp.value = "";
-        inp.focus();
 
-        document.querySelectorAll('td').forEach(td => td.classList.remove('highlight-target'));
-        
         let bIdx = maxCols - 1;
         let bDigit = parseInt(botNums[bIdx]) || 0;
         let tDigit = parseInt(topNums[currentCol]) || 0;
 
+        let targetCellId = "";
+
         if (subStepMode === "carry") {
-            // Highlight the exact carry cell in the top row where the carry goes
-            let targetCarryCell = document.getElementById('r' + (currentCol - 1));
-            if(targetCarryCell) targetCarryCell.classList.add('highlight-target');
-            
+            targetCellId = 'r' + (currentCol - 1);
             expectedTargetValue = Math.floor(pendingVal / 10);
         } else {
             failureOnCurrentStep = false;
-            // Highlight the calculation answer cell where the product row digit lands
-            let targetAnsCell = document.getElementById('ans1-' + currentCol);
-            if(targetAnsCell) targetAnsCell.classList.add('highlight-target');
+            targetCellId = 'ans1-' + currentCol;
             
-            expectedTargetValue = (tDigit * bDigit) + activeCarry;
+            let calcProduct = (tDigit * bDigit) + activeCarry;
+            let isFinalDigit = (topNums.slice(0, currentCol).join('').trim().length === 0);
+            
+            // If it's the final left-hand digit, they drop the whole remaining number down (like 42)
+            // Otherwise, they only write the ones digit right now
+            expectedTargetValue = (calcProduct >= 10 && !isFinalDigit) ? (calcProduct % 10) : calcProduct;
+            pendingVal = calcProduct; 
         }
-    }
 
-    function addMistakeLogEntry(issueType, currentInputValue) {
-        totalMistakeTally++;
-        errorsOnCurrentProblem++;
-        let sentenceDescription = `Q${activeQuestionNum}: `;
-        let bIdx = maxCols - 1;
-
-        let tDigit = parseInt(topNums[currentCol]) || 0;
-        let bDigit = parseInt(botNums[bIdx]) || 0;
-        let rawProduct = tDigit * bDigit;
-
-        if (subStepMode === "carry") {
-            sentenceDescription += (issueType === 'IDK') ? `Gave up when writing the carry over from calculation (${bDigit}×${tDigit} + ${activeCarry}).` : `Wrong carry value typed after calculation yielded ${pendingVal}.`;
-        }
-        else {
-            if (issueType === 'IDK') {
-                sentenceDescription += `Gave up calculating column step ${bDigit} × ${tDigit}${activeCarry > 0 ? ' + carry ' + activeCarry : ''}.`;
-            } else {
-                if (activeCarry > 0 && currentInputValue === rawProduct) {
-                    sentenceDescription += `Forgot to add the carry value of ${activeCarry} on product ${bDigit}×${tDigit}.`;
-                } else {
-                    sentenceDescription += `Calculation error on column step ${bDigit}×${tDigit}${activeCarry > 0 ? ' + carry ' + activeCarry : ''} (Entered: ${currentInputValue}).`;
+        let targetCell = document.getElementById(targetCellId);
+        if (targetCell) {
+            targetCell.classList.add('highlight-target');
+            // Inject an interactive active text field inside the grid cell itself
+            targetCell.innerHTML = `<input type="number" id="grid-active-input" class="grid-input" autocomplete="off">`;
+            
+            let inp = document.getElementById('grid-active-input');
+            inp.focus();
+            
+            // Allow press enter inside the cell to submit
+            inp.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    handleStepSubmission();
                 }
-            }
+            });
         }
-        comprehensiveMistakeLog.push(sentenceDescription);
-    }
-
-    function handleIDKRequest() {
-        let rawVal = parseInt(document.getElementById('user-ans').value);
-        if (!failureOnCurrentStep) {
-            addMistakeLogEntry('IDK', rawVal);
-            failureOnCurrentStep = true;
-        }
-        
-        let fb = document.getElementById('feedback');
-        fb.innerText = `💡 Answer was: ${expectedTargetValue}`;
-        fb.style.color = "#e67e22";
-
-        setTimeout(() => {
-            executeValidStepTransition(expectedTargetValue);
-        }, 1200);
     }
 
     function handleStepSubmission() {
-        let val = parseInt(document.getElementById('user-ans').value);
+        let inp = document.getElementById('grid-active-input');
+        if (!inp) return;
+        
+        let val = parseInt(inp.value);
         let fb = document.getElementById('feedback');
         
         if (isNaN(val)) return;
@@ -254,45 +228,82 @@
             document.getElementById('control-panel').classList.add('recovery-alert');
             fb.style.color = "#e74c3c";
             fb.innerText = `❌ Incorrect. Check calculations and try again!`;
+            inp.focus();
         }
+    }
+
+    function handleIDKRequest() {
+        if (!failureOnCurrentStep) {
+            addMistakeLogEntry('IDK', NaN);
+            failureOnCurrentStep = true;
+        }
+        
+        let inp = document.getElementById('grid-active-input');
+        if(inp) inp.value = expectedTargetValue;
+
+        let fb = document.getElementById('feedback');
+        fb.innerText = `💡 Answer filled in: ${expectedTargetValue}`;
+        fb.style.color = "#e67e22";
+
+        setTimeout(() => {
+            executeValidStepTransition(expectedTargetValue);
+        }, 1400);
+    }
+
+    function addMistakeLogEntry(issueType, currentInputValue) {
+        totalMistakeTally++;
+        errorsOnCurrentProblem++;
+        let sentenceDescription = `Q${activeQuestionNum}: `;
+        let bIdx = maxCols - 1;
+
+        let tDigit = parseInt(topNums[currentCol]) || 0;
+        let bDigit = parseInt(botNums[bIdx]) || 0;
+
+        if (subStepMode === "carry") {
+            sentenceDescription += (issueType === 'IDK') ? `Gave up when writing carry row digit for column ${currentCol}.` : `Wrong carry value typed in column ${currentCol}.`;
+        } else {
+            sentenceDescription += (issueType === 'IDK') ? `Gave up calculating column step ${bDigit}×${tDigit}.` : `Calculation error on column step ${bDigit}×${tDigit} (Entered: ${currentInputValue}).`;
+        }
+        comprehensiveMistakeLog.push(sentenceDescription);
     }
 
     function executeValidStepTransition(resolvedValue) {
         if (subStepMode === "carry") {
             multCarries[currentCol-1] = resolvedValue;
             subStepMode = null;
-            finalize(pendingVal % 10);
+            // Advance columns now that the full cycle for this digit (answer + carry) is over
+            moveNextColumn();
             return;
         }
         
         let isFinalDigit = (topNums.slice(0, currentCol).join('').trim().length === 0);
 
-        if (resolvedValue >= 10 && !isFinalDigit) {
-            pendingVal = resolvedValue;
+        if (pendingVal >= 10 && !isFinalDigit) {
+            // Save the base answer digit to grid memory array
+            savedAns['ans1-'+currentCol] = resolvedValue;
+            // Put system into carry mode immediately to flag the box right above
             subStepMode = "carry";
             prepareStepHighlight();
         } else { 
-            finalize(resolvedValue); 
+            // Final step handling when no carry mode is triggered or reached edge
+            if(pendingVal >= 10) {
+                savedAns['ans1-'+currentCol] = (pendingVal % 10).toString();
+                savedAns['ans1-'+(currentCol-1)] = Math.floor(pendingVal/10).toString();
+            } else {
+                savedAns['ans1-'+currentCol] = resolvedValue.toString();
+            }
+            moveNextColumn();
         }
     }
 
-    function finalize(v) {
-        let rowTag = 'ans1-';
-        if(v >= 10){
-            savedAns[rowTag+currentCol] = (v % 10).toString();
-            savedAns[rowTag+(currentCol-1)] = Math.floor(v/10).toString();
-        } else { 
-            savedAns[rowTag+currentCol] = v.toString(); 
-        }
-        
-        renderGrid();
-
+    function moveNextColumn() {
         let more = (topNums.slice(0, currentCol).join('').trim().length > 0);
 
         if(!more) { 
             if (errorsOnCurrentProblem === 0) {
                 problemsPerfectOnFirstTry++;
             }
+            renderGrid();
             handleEndOfPhase();
         } else {
             currentCol--;
@@ -302,10 +313,9 @@
     }
 
     function handleEndOfPhase() {
-        document.querySelectorAll('td').forEach(td => td.classList.remove('highlight-target'));
-        
-        document.getElementById('user-ans').classList.add('hidden');
         document.getElementById('idk-btn').classList.add('hidden');
+        let fb = document.getElementById('feedback');
+        fb.innerText = "";
         
         let submitBtn = document.getElementById('submit-btn');
         submitBtn.innerText = "Next Problem ➔";
